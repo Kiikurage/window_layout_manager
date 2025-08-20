@@ -1,35 +1,55 @@
 ﻿using System.Runtime.InteropServices;
 using System.Text;
-using System.Windows;
 using System.Windows.Forms;
-using System.Windows.Interop;
 
 namespace window_layout_manager
 {
+    class HotKey
+    {
+        public const int TOP_LEFT = 1;
+        public const int TOP_RIGHT = 2;
+        public const int BOTTOM_LEFT = 3;
+        public const int BOTTOM_RIGHT = 4;
+        public const int MAXIMIZE = 5;
+        public const int LEFT = 6;
+        public const int TOP = 7;
+        public const int RIGHT = 8;
+        public const int BOTTOM = 9;
+    }
+
     /// <summary>
     /// キーイベントを受け取るサービス
     /// </summary>
-    public partial class HotKeyService
+    public partial class HotKeyService : Form, IDisposable
     {
-        struct GridRect
+        [StructLayout(LayoutKind.Sequential)]
+        struct RECT
         {
-            public double GridW;
-            public double GridH;
-            public double X;
-            public double Y;
-            public double W;
-            public double H;
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+
+            public readonly int Width => Right - Left;
+            public readonly int Height => Bottom - Top;
         }
 
-        private static GridRect TOP_LEFT = new() { GridW = 2, GridH = 2, X = 0, Y = 0, W = 1, H = 1 };
-        private static GridRect TOP_RIGHT = new() { GridW = 2, GridH = 2, X = 1, Y = 0, W = 1, H = 1 };
-        private static GridRect BOTTOM_LEFT = new() { GridW = 2, GridH = 2, X = 0, Y = 1, W = 1, H = 1 };
-        private static GridRect BOTTOM_RIGHT = new() { GridW = 2, GridH = 2, X = 1, Y = 1, W = 1, H = 1 };
-        private static GridRect MAXIMIZE = new() { GridW = 1, GridH = 1, X = 0, Y = 0, W = 1, H = 1 };
-        private static GridRect LEFT = new() { GridW = 2, GridH = 1, X = 0, Y = 0, W = 1, H = 1 };
-        private static GridRect RIGHT = new() { GridW = 2, GridH = 1, X = 1, Y = 0, W = 1, H = 1 };
-        private static GridRect TOP = new() { GridW = 1, GridH = 2, X = 0, Y = 0, W = 1, H = 1 };
-        private static GridRect BOTTOM = new() { GridW = 1, GridH = 2, X = 0, Y = 1, W = 1, H = 1 };
+        [StructLayout(LayoutKind.Sequential)]
+        struct MONITORINFO
+        {
+            public uint cbSize;
+            public RECT rcMonitor;
+            public RECT rcWork;
+            public uint dwFlags;
+        }
+
+        /// <summary>
+        /// 最も近いモニタを取得
+        /// </summary>
+        private const uint MONITOR_DEFAULTTONEAREST = 0x0002;
+        private const int GWL_STYLE = -16;
+        private const int GWL_EXSTYLE = -20;
+        private const int SW_RESTORE = 9;
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -59,38 +79,43 @@ namespace window_layout_manager
         [DllImport("user32.dll", SetLastError = true)]
         private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
-        const int GWL_STYLE = -16;
-        const int GWL_EXSTYLE = -20;
-
-        [StructLayout(LayoutKind.Sequential)]
-        struct MONITORINFO
-        {
-            public uint cbSize;
-            public RECT rcMonitor;
-            public RECT rcWork;
-            public uint dwFlags;
-        }
-
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
-        [StructLayout(LayoutKind.Sequential)]
-        struct RECT
-        {
-            public int Left;
-            public int Top;
-            public int Right;
-            public int Bottom;
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
-            public readonly int Width => Right - Left;
-            public readonly int Height => Bottom - Top;
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool IsZoomed(IntPtr hWnd);
+
+        struct GridRect
+        {
+            public double GridW;
+            public double GridH;
+            public double X;
+            public double Y;
+            public double W;
+            public double H;
         }
 
-        /// <summary>
-        /// 最も近いモニタを取得
-        /// </summary>
-        private const uint MONITOR_DEFAULTTONEAREST = 0x0002;
+        private static GridRect TOP_LEFT = new() { GridW = 2, GridH = 2, X = 0, Y = 0, W = 1, H = 1 };
+        private static GridRect TOP_RIGHT = new() { GridW = 2, GridH = 2, X = 1, Y = 0, W = 1, H = 1 };
+        private static GridRect BOTTOM_LEFT = new() { GridW = 2, GridH = 2, X = 0, Y = 1, W = 1, H = 1 };
+        private static GridRect BOTTOM_RIGHT = new() { GridW = 2, GridH = 2, X = 1, Y = 1, W = 1, H = 1 };
+        private static GridRect MAXIMIZE = new() { GridW = 1, GridH = 1, X = 0, Y = 0, W = 1, H = 1 };
+        private static GridRect LEFT = new() { GridW = 2, GridH = 1, X = 0, Y = 0, W = 1, H = 1 };
+        private static GridRect RIGHT = new() { GridW = 2, GridH = 1, X = 1, Y = 0, W = 1, H = 1 };
+        private static GridRect TOP = new() { GridW = 1, GridH = 2, X = 0, Y = 0, W = 1, H = 1 };
+        private static GridRect BOTTOM = new() { GridW = 1, GridH = 2, X = 0, Y = 1, W = 1, H = 1 };
+
+        private const uint MOD_ALT = 0x0001;
+        private const uint MOD_CONTROL = 0x0002;
+        private const uint MOD_SHIFT = 0x0004;
+        private const uint MOD_WIN = 0x0008;
+        private const uint MOD_NOREPEAT = 0x4000;
 
         [DllImport("user32.dll")]
         private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -98,123 +123,87 @@ namespace window_layout_manager
         [DllImport("user32.dll")]
         private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
-        private const int WM_HOTKEY = 0x0312;
+        private static NotifyIcon? _notifyIcon;
 
-        private const int WS_POPUP = 0x000000;
-
-        private const uint MOD_ALT = 0x0001;
-        private const uint MOD_CONTROL = 0x0002;
-        private const uint MOD_SHIFT = 0x0004;
-        private const uint MOD_WIN = 0x0008;
-        private const uint MOD_NOREPEAT = 0x4000;
-        private const uint MOD_KEY_A = 0x41;
-
-        private const int HOTKEY_TOP_LEFT = 1;
-        private const int HOTKEY_TOP_RIGHT = 2;
-        private const int HOTKEY_BOTTOM_LEFT = 3;
-        private const int HOTKEY_BOTTOM_RIGHT = 4;
-        private const int HOTKEY_MAXIMIZE = 5;
-        private const int HOTKEY_LEFT = 6;
-        private const int HOTKEY_TOP = 7;
-        private const int HOTKEY_RIGHT = 8;
-        private const int HOTKEY_BOTTOM = 9;
-
-        private HwndSource? _source;
-
-        public void Start()
+        public HotKeyService()
         {
-            // サイズ0のウィンドウを用意し、キーイベントを受け取れるようにする
-            _source = new HwndSource(new HwndSourceParameters("HotKeyService")
+            ShowInTaskbar = false;
+            WindowState = FormWindowState.Minimized;
+            Visible = false;
+
+            RegisterHotKey(Handle, HotKey.TOP_LEFT, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.A);
+            RegisterHotKey(Handle, HotKey.TOP_RIGHT, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.S);
+            RegisterHotKey(Handle, HotKey.BOTTOM_LEFT, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.Z);
+            RegisterHotKey(Handle, HotKey.BOTTOM_RIGHT, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.X);
+            RegisterHotKey(Handle, HotKey.MAXIMIZE, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.D);
+            RegisterHotKey(Handle, HotKey.LEFT, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.Left);
+            RegisterHotKey(Handle, HotKey.TOP, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.Up);
+            RegisterHotKey(Handle, HotKey.RIGHT, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.Right);
+            RegisterHotKey(Handle, HotKey.BOTTOM, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.Down);
+
+            _notifyIcon = new NotifyIcon
             {
-                Width = 0,
-                Height = 0,
-                PositionX = 0,
-                PositionY = 0,
-                WindowStyle = WS_POPUP,
+                Icon = System.Drawing.SystemIcons.Application,
+                Visible = true,
+                Text = "Window Layout Manager"
+            };
+
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("Exit", null, (s, ev) =>
+            {
+                _notifyIcon.Visible = false;
+                Dispose();
+                Application.Exit();
             });
-            _source.AddHook(HwndHook);
-
-            RegisterHotKey(_source.Handle, HOTKEY_TOP_LEFT, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.A);
-            RegisterHotKey(_source.Handle, HOTKEY_TOP_RIGHT, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.S);
-            RegisterHotKey(_source.Handle, HOTKEY_BOTTOM_LEFT, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.Z);
-            RegisterHotKey(_source.Handle, HOTKEY_BOTTOM_RIGHT, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.X);
-            RegisterHotKey(_source.Handle, HOTKEY_MAXIMIZE, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.D);
-            RegisterHotKey(_source.Handle, HOTKEY_LEFT, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint) Keys.Left);
-            RegisterHotKey(_source.Handle, HOTKEY_TOP, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.Up);
-            RegisterHotKey(_source.Handle, HOTKEY_RIGHT, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.Right);
-            RegisterHotKey(_source.Handle, HOTKEY_BOTTOM, MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT, (uint)Keys.Down);
+            _notifyIcon.ContextMenuStrip = menu;
         }
 
-        public void Dispose()
+        protected override void WndProc(ref Message m)
         {
-            if (_source != null)
+            const int WM_HOTKEY = 0x0312;
+            if (m.Msg == WM_HOTKEY)
             {
-                UnregisterHotKey(_source.Handle, HOTKEY_TOP_LEFT);
-                UnregisterHotKey(_source.Handle, HOTKEY_TOP_RIGHT);
-                UnregisterHotKey(_source.Handle, HOTKEY_BOTTOM_LEFT);
-                UnregisterHotKey(_source.Handle, HOTKEY_BOTTOM_RIGHT);
-                UnregisterHotKey(_source.Handle, HOTKEY_MAXIMIZE);
-                UnregisterHotKey(_source.Handle, HOTKEY_LEFT);
-                UnregisterHotKey(_source.Handle, HOTKEY_TOP);
-                UnregisterHotKey(_source.Handle, HOTKEY_RIGHT);
-                UnregisterHotKey(_source.Handle, HOTKEY_BOTTOM);
-                _source = null;
-            }
-        }
+                int id = m.WParam.ToInt32();
 
-        private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-        {
-            if (msg == WM_HOTKEY)
-            {
-                int id = wParam.ToInt32();
-                if (id == HOTKEY_TOP_LEFT)
+                if (id == HotKey.TOP_LEFT)
                 {
                     OnHotKeyPressed(TOP_LEFT);
-                    handled = true;
                 }
-                else if (id == HOTKEY_TOP_RIGHT)
+                else if (id == HotKey.TOP_RIGHT)
                 {
                     OnHotKeyPressed(TOP_RIGHT);
-                    handled = true;
                 }
-                else if (id == HOTKEY_BOTTOM_LEFT)
+                else if (id == HotKey.BOTTOM_LEFT)
                 {
                     OnHotKeyPressed(BOTTOM_LEFT);
-                    handled = true;
                 }
-                else if (id == HOTKEY_BOTTOM_RIGHT)
+                else if (id == HotKey.BOTTOM_RIGHT)
                 {
                     OnHotKeyPressed(BOTTOM_RIGHT);
-                    handled = true;
                 }
-                else if (id == HOTKEY_MAXIMIZE)
+                else if (id == HotKey.MAXIMIZE)
                 {
                     OnHotKeyPressed(MAXIMIZE);
-                    handled = true;
                 }
-                else if (id == HOTKEY_LEFT)
+                else if (id == HotKey.LEFT)
                 {
                     OnHotKeyPressed(LEFT);
-                    handled = true;
                 }
-                else if (id == HOTKEY_TOP)
+                else if (id == HotKey.TOP)
                 {
                     OnHotKeyPressed(TOP);
-                    handled = true;
                 }
-                else if (id == HOTKEY_RIGHT)
+                else if (id == HotKey.RIGHT)
                 {
                     OnHotKeyPressed(RIGHT);
-                    handled = true;
                 }
-                else if (id == HOTKEY_BOTTOM)
+                else if (id == HotKey.BOTTOM)
                 {
                     OnHotKeyPressed(BOTTOM);
-                    handled = true;
                 }
             }
 
-            return IntPtr.Zero;
+            base.WndProc(ref m);
         }
 
         private void OnHotKeyPressed(GridRect rect)
@@ -224,11 +213,16 @@ namespace window_layout_manager
             {
                 return;
             }
-            Resize(hWnd, rect);
+            ResizeWindow(hWnd, rect);
         }
 
-        private void Resize(IntPtr hWnd, GridRect rect)
+        private void ResizeWindow(IntPtr hWnd, GridRect rect)
         {
+            if (IsZoomed(hWnd))
+            {
+                ShowWindow(hWnd, SW_RESTORE);
+            }
+
             IntPtr hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
             MONITORINFO mi = new MONITORINFO();
             mi.cbSize = (uint)Marshal.SizeOf(typeof(MONITORINFO));
@@ -239,11 +233,12 @@ namespace window_layout_manager
             double width = mi.rcWork.Width * rect.W / rect.GridW;
             double height = mi.rcWork.Height * rect.H / rect.GridH;
 
-            RECT clientRect = new() {
+            RECT clientRect = new()
+            {
                 Left = (int)left,
                 Top = (int)top,
                 Right = (int)(left + width),
-                Bottom =(int)(top + height)
+                Bottom = (int)(top + height)
             };
 
             uint style = (uint)GetWindowLong(hWnd, GWL_STYLE);
@@ -262,6 +257,30 @@ namespace window_layout_manager
                 windowRect.Height - topMargin,
                 true
             );
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (_notifyIcon != null)
+                {
+                    _notifyIcon.Dispose();
+                    _notifyIcon = null;
+                }
+
+                UnregisterHotKey(Handle, HotKey.TOP_LEFT);
+                UnregisterHotKey(Handle, HotKey.TOP_RIGHT);
+                UnregisterHotKey(Handle, HotKey.BOTTOM_LEFT);
+                UnregisterHotKey(Handle, HotKey.BOTTOM_RIGHT);
+                UnregisterHotKey(Handle, HotKey.MAXIMIZE);
+                UnregisterHotKey(Handle, HotKey.LEFT);
+                UnregisterHotKey(Handle, HotKey.TOP);
+                UnregisterHotKey(Handle, HotKey.RIGHT);
+                UnregisterHotKey(Handle, HotKey.BOTTOM);
+            }
+
+            base.Dispose(disposing);
         }
     }
 }
