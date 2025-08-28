@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using Microsoft.Win32;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 
@@ -149,7 +150,30 @@ namespace window_layout_manager
             };
 
             var menu = new ContextMenuStrip();
-            menu.Items.Add("Exit", null, (s, ev) =>
+            var autoStartMenuItem = menu.Items.Add("PC起動時に自動起動", null, (s, ev) =>
+            {
+                try
+                {
+                    if (IsAutoStartEnabled())
+                    {
+                        DisableAutoStart();
+                        (s as ToolStripMenuItem)!.Checked = false;
+                    }
+                    else
+                    {
+                        EnableAutoStart();
+                        (s as ToolStripMenuItem)!.Checked = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"自動起動の設定に失敗しました。\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    (s as ToolStripMenuItem)!.Checked = IsAutoStartEnabled();
+                }
+            }) as ToolStripMenuItem;
+            autoStartMenuItem.Checked = IsAutoStartEnabled();
+
+            menu.Items.Add("終了", null, (s, ev) =>
             {
                 _notifyIcon.Visible = false;
                 Dispose();
@@ -281,6 +305,38 @@ namespace window_layout_manager
             }
 
             base.Dispose(disposing);
+        }
+
+        private const string RunKeyPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
+        private const string appName = "window_layout_manager";
+        private readonly string exePath = Environment.ProcessPath!;
+
+
+        public void EnableAutoStart()
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, true);
+            if (key == null)
+                throw new InvalidOperationException("レジストリの設定に失敗しました");
+
+            key.SetValue(appName, exePath);
+        }
+
+        public void DisableAutoStart()
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, true);
+            if (key == null)
+                throw new InvalidOperationException("レジストリの設定に失敗しました");
+
+            key.DeleteValue(appName, false);
+        }
+
+        public bool IsAutoStartEnabled()
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, false);
+            if (key == null) return false;
+
+            var value = key.GetValue(appName) as string;
+            return value == exePath;
         }
     }
 }
