@@ -10,7 +10,11 @@ namespace window_layout_manager
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            using var hotKeyService = new HotKeyService();
+            var preference = new PreferenceRepository();
+            using var trayIcon = new TrayIcon(preference);
+            trayIcon.ExitMenuClicked += (s, e) => Application.Exit();
+
+            using var hotKeyService = new HotKeyService(preference);
             Application.Run();
         }
     }
