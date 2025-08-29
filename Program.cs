@@ -15,6 +15,9 @@ namespace window_layout_manager
             trayIcon.ExitMenuClicked += (s, e) => Application.Exit();
 
             using var hotKeyService = new HotKeyService(preference);
+
+            //var preferenceWindow = new PreferenceWindow();
+
             Application.Run();
         }
     }

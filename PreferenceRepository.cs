@@ -3,10 +3,25 @@ using System.Windows.Forms;
 
 namespace window_layout_manager
 {
-    public class HotKeyPattern
+    public class CommandEntry
     {
-        public uint Modifiers;
-        public uint Key;
+        public int CommandId { get; set; }
+        public required HotKeyPattern Pattern { get; set; }
+    }
+
+    public class Configuration
+    {
+        public List<CommandEntry> Entries { get; set; } = [];
+
+        public Configuration Add(int commandId, HotKeyPattern pattern)
+        {
+            Entries.Add(new()
+            {
+                CommandId = commandId,
+                Pattern = pattern
+            });
+            return this;
+        }
     }
 
     public delegate void HotKeyChangedEventHandler(
@@ -21,33 +36,46 @@ namespace window_layout_manager
         public event HotKeyChangedEventHandler? HotKeyChanged;
 
         private const string RunKeyPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
-        private const string appName = "window_layout_manager";
+        private const string AppName = "window_layout_manager";
         private readonly string exePath = Environment.ProcessPath!;
-        private Dictionary<Command, HotKeyPattern> defaultHotKeyPatterns;
+
+        private readonly Configuration configuration = GetDefaultConfiguration();
+
+        private string ConfigFilePath
+        {
+            get {
+                return Path.Combine(
+                    Path.GetDirectoryName(exePath)!,
+                    AppName + ".config.json"
+                );
+            }
+        }
 
         public PreferenceRepository()
         {
-            defaultHotKeyPatterns = new()
-            {
-                { Command.TOP_LEFT, new HotKeyPattern { Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat, Key = (uint)Keys.A } },
-                { Command.TOP_RIGHT, new HotKeyPattern { Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat, Key = (uint)Keys.S } },
-                { Command.BOTTOM_LEFT, new HotKeyPattern { Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat, Key = (uint)Keys.Z } },
-                { Command.BOTTOM_RIGHT, new HotKeyPattern { Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat, Key = (uint)Keys.X } },
-                { Command.MAXIMIZE, new HotKeyPattern { Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat, Key = (uint)Keys.D } },
-                { Command.LEFT, new HotKeyPattern { Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat, Key = (uint)Keys.Left } },
-                { Command.TOP, new HotKeyPattern { Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat, Key = (uint)Keys.Up } },
-                { Command.RIGHT, new HotKeyPattern { Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat, Key = (uint)Keys.Right } },
-                { Command.BOTTOM, new HotKeyPattern { Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat, Key = (uint)Keys.Down } },
-            };
+            //var config = new Configuration();
+            //config.Entries.Add(new CommandEntry {
+            //    CommandId = Command.TOP_LEFT.HotKeyId,
+            //    Pattern = new HotKeyPattern
+            //    {
+            //        Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat,
+            //        Key = (uint)Keys.A
+            //    }
+            //});
 
+            //string json = JsonSerializer.Serialize(config);
+            //Debug.WriteLine(json);
+
+            //var deserializedConfig = JsonSerializer.Deserialize<Configuration>(json);
         }
+        
         public void EnableAutoStart()
         {
             using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, true);
             if (key == null)
                 throw new InvalidOperationException("レジストリの設定に失敗しました");
 
-            key.SetValue(appName, exePath);
+            key.SetValue(AppName, exePath);
         }
 
         public void DisableAutoStart()
@@ -56,7 +84,7 @@ namespace window_layout_manager
             if (key == null)
                 throw new InvalidOperationException("レジストリの設定に失敗しました");
 
-            key.DeleteValue(appName, false);
+            key.DeleteValue(AppName, false);
         }
 
         public bool IsAutoStartEnabled()
@@ -64,23 +92,99 @@ namespace window_layout_manager
             using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, false);
             if (key == null) return false;
 
-            var value = key.GetValue(appName) as string;
+            var value = key.GetValue(AppName) as string;
             return value == exePath;
         }
 
         public void SetHotKeyPattern(Command command, HotKeyPattern newPattern)
         {
-            // 今のところレジストリに保存しない
-            // 将来的にUIで変更できるようにする場合は保存する
-
+            
             var oldPattern = GetHotKeyPattern(command);
+            if (oldPattern == null)
+            {
+                configuration.Entries.Add(new CommandEntry
+                {
+                    CommandId = command.HotKeyId,
+                    Pattern = newPattern
+                });
+            }
+            else
+            {
+                foreach (var entry in configuration.Entries)
+                {
+                    if (entry.CommandId == command.HotKeyId)
+                    {
+                        entry.Pattern = newPattern;
+                        break;
+                    }
+                }
+            }
+
+            // TODO 保存
+
             HotKeyChanged?.Invoke(this, command, oldPattern, newPattern);
         }
 
         public HotKeyPattern? GetHotKeyPattern(Command command)
         {
-            defaultHotKeyPatterns.TryGetValue(command, out var pattern);
-            return pattern;
+            foreach (var entry in configuration.Entries)
+            {
+                if (entry.CommandId == command.HotKeyId)
+                {
+                    return entry.Pattern;
+                }
+            }
+            return null;
+        }
+
+        private static Configuration GetDefaultConfiguration()
+        {
+            return new Configuration()
+                .Add(Command.TOP_LEFT.HotKeyId, new()
+                {
+                    Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat,
+                    Key = (uint)Keys.A
+                })
+                .Add(Command.TOP_RIGHT.HotKeyId, new()
+                {
+                    Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat,
+                    Key = (uint)Keys.S
+                })
+                .Add(Command.BOTTOM_LEFT.HotKeyId, new()
+                {
+                    Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat,
+                    Key = (uint)Keys.Z
+                })
+                .Add(Command.BOTTOM_RIGHT.HotKeyId, new()
+                {
+                    Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat,
+                    Key = (uint)Keys.X
+                })
+                .Add(Command.MAXIMIZE.HotKeyId, new()
+                {
+                    Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat,
+                    Key = (uint)Keys.D
+                })
+                .Add(Command.LEFT.HotKeyId, new()
+                {
+                    Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat,
+                    Key = (uint)Keys.Left
+                })
+                .Add(Command.TOP.HotKeyId, new()
+                {
+                    Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat,
+                    Key = (uint)Keys.Up
+                })
+                .Add(Command.RIGHT.HotKeyId, new()
+                {
+                    Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat,
+                    Key = (uint)Keys.Right
+                })
+                .Add(Command.BOTTOM.HotKeyId, new()
+                {
+                    Modifiers = WinAPI.ModControl | WinAPI.ModShift | WinAPI.ModWin | WinAPI.ModNoRepeat,
+                    Key = (uint)Keys.Down
+                });
         }
     }
 }
